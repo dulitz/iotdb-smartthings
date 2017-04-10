@@ -1,13 +1,14 @@
 /**
  *  smartthings.groovy
  *
- *  David Janes
+ *  Original Author: David Janes
  *  IOTDB.org
  *  2014-02-01
  *
+ *  modified by Daniel Dulitz, 2017
+ *
  *  Allow control of your SmartThings via an API; 
- *  Allow monitoring of your SmartThings using
- *  MQTT through the IOTDB MQTT Bridge.
+ *  Allow monitoring of your SmartThings.
  *
  *  Follow us on Twitter:
  *  - @iotdb
@@ -29,7 +30,11 @@ definition(
     category: "My Apps",
     iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
     iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience%402x.png",
-    oauth: true)
+    oauth: true) {
+    	appSetting "uri"
+	appSetting "user"
+	appSetting "password"
+    }
     
 
 /* --- setup section --- */
@@ -209,7 +214,7 @@ def deviceHandler(evt) {
 
 
 /*
- *  Send information the my personal bridge
+ *  Send information to my personal bridge
  */
 def _send_homerun(device, device_type, deviced) {
     def settings = _settings()
@@ -226,20 +231,20 @@ def _send_homerun(device, device_type, deviced) {
 	    .digest(text.getBytes("UTF-8")).encodeBase64().toString()  
     }  
 	
-    def digest = "${settings.iotdb_api_key}/${settings.iotdb_api_username}/${isodatetime}/${sequence}".toString();
-    def hash = digest.encodeAsMD5();
+    def digest = "${appSetting.user}/${appSetting.password}/${isodatetime}/${sequence}".toString()
+    def hash = sha256Hash(digest)
     
     def topic = "st/${device_type}/${deviced.id}".toString()
     
-    def uri = "https://iotdb.org/playground/mqtt/bridge"
+    def uri = appSetting.uri
     def headers = [:]
     def body = [
         "topic": topic,
-        "payloadd": deviced?.value,
+        "payload": deviced?.value,
         "timestamp": isodatetime,
         "sequence": sequence,
         "signed": hash,
-        "username": settings.iotdb_api_username
+        "username": appSetting.user
     ]
 
     def params = [
