@@ -18,37 +18,18 @@
  *  This is for SmartThing's benefit. There's no need to 
  *  change this unless you really want to
  */
+
+import java.security.MessageDigest
  
 definition(
     name: "IOTDB.bridge",
     namespace: "",
-    author: "David Janes",
-    description: "Bridge to/from JSON/MQTT.",
+    author: "David Janes, modified by Daniel Dulitz",
+    description: "Bridge to/from JSON.",
     category: "My Apps",
     iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
     iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience%402x.png",
     oauth: true)
-    
-/* --- IOTDB section --- */
-/*
- *  IOTDB MQTT Bridge
- *  - this works for now
- *  - your life is private
- *  - just set to empty values to turn off MQTT
- *
- *  The values below can be copied from this page
- *  - https://iotdb.org/playground/mqtt/bridge
- *
- *  Make sure you are logged into IOTDB first
- */
-def _settings()
-{
-    [ 
-        iotdb_api_username: "",
-        iotdb_api_key: ""
-    ]
-}
-
     
 
 /* --- setup section --- */
@@ -63,7 +44,7 @@ def _settings()
  *  the name used here (i.e. d_*)
  */
 preferences {
-    section("Allow IOTDB to Control & Access These Things...") {
+    section("Allow homerun to control and access these things:") {
         input "d_switch", "capability.switch", title: "Switch", required: false, multiple: true
         input "d_motion", "capability.motionSensor", title: "Motion", required: false, multiple: true
         input "d_temperature", "capability.temperatureMeasurement", title: "Temperature", required: false, multiple: true
@@ -73,7 +54,11 @@ preferences {
         input "d_battery", "capability.battery", title: "Battery", required: false, multiple: true
         input "d_threeAxis", "capability.threeAxis", title: "3 Axis", required: false, multiple: true
         input "d_relativeHumidityMeasurement", "capability.relativeHumidityMeasurement", title: "relativeHumidityMeasurement", required: false, multiple: true
-
+        input "d_waterSensor", "capability.waterSensor", title: "waterSensor", required:false, multiple: true
+	input "d_smokeDetector", "capability.smokeDetector", title: "smokeDetector", required:false, multiple: true
+	input "d_carbonMonoxideDetector", "capability.carbonMonoxideDetector", title: "carbonMonoxideDetector", required:false, multiple: true
+	input "d_powerMeter", "capability.powerMeter", title: "powerMeter", required:false, multiple: true
+	input "d_outlet", "capability.outlet", title: "Outlet", required:false, multiple: true
     }
 }
 
@@ -88,7 +73,6 @@ input "d_thermostatHeatingSetpoint", "capability.thermostatHeatingSetpoint", tit
 input "d_thermostatMode", "capability.thermostatMode", title: "thermostatMode", multiple: true
 input "d_thermostatSetpoint", "capability.thermostatSetpoint", title: "thermostatSetpoint", multiple: true
 input "d_threeAxisMeasurement", "capability.threeAxisMeasurement", title: "threeAxisMeasurement", multiple: true
-input "d_waterSensor", "capability.waterSensor", title: "waterSensor", multiple: true
 
 lqi: 100 %
 acceleration: inactive
@@ -138,8 +122,10 @@ def updated()
 
 /*
  *  What events are we interested in. This needs
- *  to be in it's own function because both
+ *  to be in its own function because both
  *  updated() and installed() are interested in it.
+ *
+ * see http://docs.smartthings.com/en/latest/capabilities-reference.html#capabilities-taxonomy
  */
 def _event_subscribe()
 {
@@ -151,11 +137,15 @@ def _event_subscribe()
     subscribe(d_presence, "presence", "_on_event")
     subscribe(d_battery, "battery", "_on_event")
     subscribe(d_threeAxis, "threeAxis", "_on_event")
+    subscribe(d_outlet, "outlet", "_on_event")
+    subscribe(d_waterSensor, "waterSensor", "_on_event")
+    subscribe(d_smokeDetector, "smokeDetector", "_on_event")
+    subscribe(d_carbonMonoxideDetector, "carbonMonoxideDetector", "_on_event")
+    subscribe(d_powerMeter, "powerMeter", "_on_event")
 }
 
 /*
  *  This function is called whenever something changes.
- *  Right now it just 
  */
 def _on_event(evt)
 {
@@ -170,7 +160,7 @@ def _on_event(evt)
     def jd = _device_to_json(dt.device, dt.type)
     log.debug "_on_event deviceId=${jd}"
 
-    _send_mqtt(dt.device, dt.type, jd)
+    _send_homerun(dt.device, dt.type, jd)
 
 }
 
@@ -217,31 +207,13 @@ def deviceHandler(evt) {
 
 /* --- communication section: not done --- */
 
-/*
- *  An example of how to get PushingBox.com to send a message
- */
-def _send_pushingbox() {
-    log.debug "_send_pushingbox called";
-
-    def devid = "XXXX"
-    def messageText = "Hello_World"
-
-    httpGet("http://api.pushingbox.com/pushingbox?devid=${devid}&message=xxx_xxx")
-}
 
 /*
- *  Send information the the IOTDB MQTT Bridge
- *  See https://iotdb.org/playground/mqtt/bridge for documentation
+ *  Send information the my personal bridge
  */
-def _send_mqtt(device, device_type, deviced) {
-	def settings = _settings()
-    // log.debug "_send_mqtt: iotdb_api_username=${settings.iotdb_api_username},iotdb_api_key=${settings.iotdb_api_key}"
-    
-    if (!settings.iotdb_api_username || !settings.iotdb_api_key) {
-        return
-    }
-
-    log.debug "_send_mqtt called";
+def _send_homerun(device, device_type, deviced) {
+    def settings = _settings()
+    log.debug "_send_homerun called";
 
     def now = Calendar.instance
     def date = now.time
@@ -249,6 +221,11 @@ def _send_mqtt(device, device_type, deviced) {
     def sequence = millis
     def isodatetime = deviced?.value?.timestamp
     
+    def sha256Hash = { text ->  
+	    java.security.MessageDigest.getInstance("SHA-256")
+	    .digest(text.getBytes("UTF-8")).encodeBase64().toString()  
+    }  
+	
     def digest = "${settings.iotdb_api_key}/${settings.iotdb_api_username}/${isodatetime}/${sequence}".toString();
     def hash = digest.encodeAsMD5();
     
@@ -271,8 +248,8 @@ def _send_mqtt(device, device_type, deviced) {
         body: body
     ]
 
-    log.debug "_send_mqtt: params=${params}"
-    httpPutJson(params) { log.debug "_send_mqtt: response=${response}" }
+    log.debug "_send_homerun: params=${params}"
+    httpPutJson(params) { log.debug "_send_homerun: response=${response}" }
 }
 
 
@@ -292,7 +269,12 @@ def _dtd()
         presence: d_presence,
         battery: d_battery,
         threeAxis: d_threeAxis,
-        humidity: d_relativeHumidityMeasurement
+        humidity: d_relativeHumidityMeasurement,
+	outlet: d_outlet,
+	waterSensor: d_waterSensor,
+	smokeDetector: d_smokeDetector,
+	carbonMonoxideDetector: d_carbonMonoxideDetector,
+	powerMeter: d_powerMeter
 
     ]
 }
@@ -331,7 +313,7 @@ private _device_command(device, type, jsond) {
         return;
     }
     
-    if (type == "switch") {
+    if (type == "switch" || type == "outlet") {
         def n = jsond['switch']
         if (n == -1) {
             def o = device.currentState('switch')?.value
@@ -358,7 +340,7 @@ private _device_to_json(device, type) {
     def vd = [:]
     def jd = [id: device.id, label: device.label, type: type, value: vd, hub: device.hub.name];
     
-    if (type == "switch") {
+    if (type == "switch" || type == "outlet") {
         def s = device.currentState('switch')
         vd['timestamp'] = s?.isoDate
         vd['switch'] = s?.value == "on"
@@ -396,10 +378,28 @@ private _device_to_json(device, type) {
         vd['x'] = s?.xyzValue?.x
         vd['y'] = s?.xyzValue?.y
         vd['z'] = s?.xyzValue?.z
+    } else if (type == "powerMeter") {
+	def s = device.currentState('powerMeter')
+        vd['timestamp'] = s?.isoDate
+	vd['power'] = s?.value.toFloat()
+    } else if (type == "energyMeter") {
+	def s = device.currentState('energyMeter')
+        vd['timestamp'] = s?.isoDate
+	vd['energy'] = s?.value.toFloat()
+    } else if (type == "smokeDetector") {
+	def s = device.currentState('smokeDetector')
+        vd['timestamp'] = s?.isoDate
+	vd['smoke'] = s?.smoke?.value == 'detected'
+	vd['carbonMonoxide'] = s?.carbonMonoxide?.value == 'detected'
+	vd['smoke_tested'] = s?.smoke?.value == 'tested'
+	vd['carbonMonoxide_tested'] = s?.carbonMonoxide?.value == 'tested'
+    } else if (type == "waterDetector") {
+	def s = device.currentState('waterDetector')
+        vd['timestamp'] = s?.isoDate
+	vd['water'] = s?.value == 'wet'
     }
     
-	def settings = _settings()
-    jd['mqtt'] = "tcp://mqtt.iotdb.org/u/${settings.iotdb_api_username}/st/${type}/${device.id}"
+    def settings = _settings()
 
     return jd
 }
