@@ -1,5 +1,16 @@
 /**
- *  smartthings.groovy
+ *  Homerun
+ *
+ *  Copyright 2017 Daniel Dulitz
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
  *
  *  Original Author: David Janes
  *  IOTDB.org
@@ -13,27 +24,21 @@
  *  Follow us on Twitter:
  *  - @iotdb
  *  - @dpjanes
- *
- *  A work in progress!
- *
- *  This is for SmartThing's benefit. There's no need to 
- *  change this unless you really want to
  */
-
-import java.security.MessageDigest
  
 definition(
-    name: "IOTDB.bridge",
-    namespace: "",
+    name: "Homerun",
+    namespace: "dulitz",
     author: "David Janes, modified by Daniel Dulitz",
-    description: "Bridge to/from JSON.",
+    description: "Exposes endpoints to allow my programmatic controller access to SmartThings data.",
     category: "My Apps",
     iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
-    iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience%402x.png",
+    iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
+    iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
     oauth: true) {
-    	appSetting "uri"
-	appSetting "user"
-	appSetting "password"
+		appSetting "uri"
+		appSetting "user"
+		appSetting "password"
     }
     
 
@@ -58,12 +63,16 @@ preferences {
         input "d_presence", "capability.presenceSensor", title: "Presence", required: false, multiple: true
         input "d_battery", "capability.battery", title: "Battery", required: false, multiple: true
         input "d_threeAxis", "capability.threeAxis", title: "3 Axis", required: false, multiple: true
-        input "d_relativeHumidityMeasurement", "capability.relativeHumidityMeasurement", title: "relativeHumidityMeasurement", required: false, multiple: true
-        input "d_waterSensor", "capability.waterSensor", title: "waterSensor", required:false, multiple: true
-	input "d_smokeDetector", "capability.smokeDetector", title: "smokeDetector", required:false, multiple: true
-	input "d_carbonMonoxideDetector", "capability.carbonMonoxideDetector", title: "carbonMonoxideDetector", required:false, multiple: true
-	input "d_powerMeter", "capability.powerMeter", title: "powerMeter", required:false, multiple: true
-	input "d_outlet", "capability.outlet", title: "Outlet", required:false, multiple: true
+        input "d_humidity", "capability.relativeHumidityMeasurement", title: "Hygrometer", required: false, multiple: true
+        input "d_water", "capability.waterSensor", title: "Water Sensor", required:false, multiple: true
+		input "d_smoke", "capability.smokeDetector", title: "Smoke Detector", required:false, multiple: true
+		input "d_carbonMonoxide", "capability.carbonMonoxideDetector", title: "Carbon Monoxide Detector", required:false, multiple: true
+		input "d_power", "capability.powerMeter", title: "Power Meter", required:false, multiple: true
+		input "d_outlet", "capability.outlet", title: "Outlet", required:false, multiple: true
+        input "d_lqi", "capability.signalStrength", title: "Signal Strength", required:false, multiple: true
+    }
+    section("Report events at this location to the following HTTPS URI:") {
+    	input "d_event_callback_uri", "text", title: "HTTPS URI", required:true, multiple:false
     }
 }
 
@@ -78,7 +87,6 @@ input "d_thermostatHeatingSetpoint", "capability.thermostatHeatingSetpoint", tit
 input "d_thermostatMode", "capability.thermostatMode", title: "thermostatMode", multiple: true
 input "d_thermostatSetpoint", "capability.thermostatSetpoint", title: "thermostatSetpoint", multiple: true
 input "d_threeAxisMeasurement", "capability.threeAxisMeasurement", title: "threeAxisMeasurement", multiple: true
-
 lqi: 100 %
 acceleration: inactive
 threeAxis: -38,55,1021
@@ -88,8 +96,6 @@ temperature: 65 F
 
 /*
  *  The API
- *  - ideally the command/update bit would actually
- *    be a PUT call on the ID to make this restful
  */
 mappings {
     path("/:type") {
@@ -108,19 +114,24 @@ mappings {
 /*
  *  This function is called once when the app is installed
  */
+
 def installed() {
-    _event_subscribe()
+	log.debug "Installed with settings: ${settings}"
+	initialize()
 }
 
 /*
  *  This function is called every time the user changes
  *  their preferences
  */
-def updated()
-{
-    log.debug "updated"
-    unsubscribe()
-    _event_subscribe()
+def updated() {
+	log.debug "Updated with settings: ${settings}"
+	unsubscribe()
+	initialize()
+}
+
+def initialize() {
+	_event_subscribe()
 }
 
 /* --- event section --- */
@@ -132,28 +143,28 @@ def updated()
  *
  * see http://docs.smartthings.com/en/latest/capabilities-reference.html#capabilities-taxonomy
  */
-def _event_subscribe()
-{
+def _event_subscribe() {
     subscribe(d_switch, "switch", "_on_event")
     subscribe(d_motion, "motion", "_on_event")
     subscribe(d_temperature, "temperature", "_on_event")
+    subscribe(d_humidity, "humidity", "_on_event")
+    subscribe(d_lqi, "lqi", "_on_event")
     subscribe(d_contact, "contact", "_on_event")
     subscribe(d_acceleration, "acceleration", "_on_event")
     subscribe(d_presence, "presence", "_on_event")
     subscribe(d_battery, "battery", "_on_event")
     subscribe(d_threeAxis, "threeAxis", "_on_event")
     subscribe(d_outlet, "outlet", "_on_event")
-    subscribe(d_waterSensor, "waterSensor", "_on_event")
-    subscribe(d_smokeDetector, "smokeDetector", "_on_event")
-    subscribe(d_carbonMonoxideDetector, "carbonMonoxideDetector", "_on_event")
-    subscribe(d_powerMeter, "powerMeter", "_on_event")
+    subscribe(d_water, "water", "_on_event")
+    subscribe(d_smoke, "smoke", "_on_event")
+    subscribe(d_carbonMonoxide, "carbonMonoxide", "_on_event")
+    subscribe(d_power, "powerMeter", "_on_event")
 }
 
 /*
  *  This function is called whenever something changes.
  */
-def _on_event(evt)
-{
+def _on_event(evt) {
 //    log.debug "_on_event XXX event.id=${evt?.id} event.deviceId=${evt?.deviceId} event.isStateChange=${evt?.isStateChange} event.name=${evt?.name}"
     
     def dt = _device_and_type_for_event(evt)
@@ -170,15 +181,13 @@ def _on_event(evt)
 }
 
 /* --- API section --- */
-def _api_list()
-{
-    _devices_for_type(params.type).collect{
+def _api_list() {
+    _devices_for_type(params.type).collect {
         _device_to_json(it, params.type)
     }
 }
 
-def _api_put()
-{
+def _api_put() {
     def devices = _devices_for_type(params.type)
     def device = devices.find { it.id == params.id }
     if (!device) {
@@ -188,8 +197,7 @@ def _api_put()
     }
 }
 
-def _api_get()
-{
+def _api_get() {
     def devices = _devices_for_type(params.type)
     def device = devices.find { it.id == params.id }
     if (!device) {
@@ -199,8 +207,7 @@ def _api_get()
     }
 }
 
-void _api_update()
-{
+void _api_update() {
     _do_update(_devices_for_type(params.type), params.type)
 }
 
@@ -210,14 +217,13 @@ void _api_update()
 def deviceHandler(evt) {
 }
 
-/* --- communication section: not done --- */
+/* --- communication section --- */
 
 
 /*
  *  Send information to my personal bridge
  */
 def _send_homerun(device, device_type, deviced) {
-    def settings = _settings()
     log.debug "_send_homerun called";
 
     def now = Calendar.instance
@@ -226,17 +232,19 @@ def _send_homerun(device, device_type, deviced) {
     def sequence = millis
     def isodatetime = deviced?.value?.timestamp
     
+/*	
     def sha256Hash = { text ->  
 	    java.security.MessageDigest.getInstance("SHA-256")
 	    .digest(text.getBytes("UTF-8")).encodeBase64().toString()  
-    }  
-	
-    def digest = "${appSetting.user}/${appSetting.password}/${isodatetime}/${sequence}".toString()
+    }
+    def digest = "${appSettings.user}/${appSettings.password}/${isodatetime}/${sequence}".toString()
     def hash = sha256Hash(digest)
-    
+ */
+ 	def hash = "".toString()
     def topic = "st/${device_type}/${deviced.id}".toString()
     
-    def uri = appSetting.uri
+    def uri = d_event_callback_uri
+    if (!uri?.startsWith("https://")) uri = appSettings.uri
     def headers = [:]
     def body = [
         "topic": topic,
@@ -244,7 +252,8 @@ def _send_homerun(device, device_type, deviced) {
         "timestamp": isodatetime,
         "sequence": sequence,
         "signed": hash,
-        "username": appSetting.user
+        "username": appSettings.user,
+        "password": appSettings.password  /* this is not in the clear as we're using TLS */
     ]
 
     def params = [
@@ -274,12 +283,13 @@ def _dtd()
         presence: d_presence,
         battery: d_battery,
         threeAxis: d_threeAxis,
-        humidity: d_relativeHumidityMeasurement,
-	outlet: d_outlet,
-	waterSensor: d_waterSensor,
-	smokeDetector: d_smokeDetector,
-	carbonMonoxideDetector: d_carbonMonoxideDetector,
-	powerMeter: d_powerMeter
+        humidity: d_humidity,
+		outlet: d_outlet,
+		water: d_water,
+		smoke: d_smoke,
+		carbonMonoxide: d_carbonMonoxide,
+		powerMeter: d_power,
+        lqi: d_lqi,
 
     ]
 }
@@ -383,28 +393,26 @@ private _device_to_json(device, type) {
         vd['x'] = s?.xyzValue?.x
         vd['y'] = s?.xyzValue?.y
         vd['z'] = s?.xyzValue?.z
-    } else if (type == "powerMeter") {
-	def s = device.currentState('powerMeter')
-        vd['timestamp'] = s?.isoDate
-	vd['power'] = s?.value.toFloat()
-    } else if (type == "energyMeter") {
-	def s = device.currentState('energyMeter')
-        vd['timestamp'] = s?.isoDate
-	vd['energy'] = s?.value.toFloat()
-    } else if (type == "smokeDetector") {
-	def s = device.currentState('smokeDetector')
-        vd['timestamp'] = s?.isoDate
-	vd['smoke'] = s?.smoke?.value == 'detected'
-	vd['carbonMonoxide'] = s?.carbonMonoxide?.value == 'detected'
-	vd['smoke_tested'] = s?.smoke?.value == 'tested'
-	vd['carbonMonoxide_tested'] = s?.carbonMonoxide?.value == 'tested'
-    } else if (type == "waterDetector") {
-	def s = device.currentState('waterDetector')
-        vd['timestamp'] = s?.isoDate
-	vd['water'] = s?.value == 'wet'
+    } else if (type == "power") {
+		def s = device.currentState('power')
+		vd['timestamp'] = s?.isoDate
+		vd['power'] = s?.value.toFloat()
+    } else if (type == "energy") {
+		def s = device.currentState('energy')
+		vd['timestamp'] = s?.isoDate
+		vd['energy'] = s?.value.toFloat()
+    } else if (type == "smoke") {
+		def s = device.currentState('smoke')
+		vd['timestamp'] = s?.isoDate
+		vd['smoke'] = s?.smoke?.value == 'detected'
+		vd['carbonMonoxide'] = s?.carbonMonoxide?.value == 'detected'
+		vd['smoke_tested'] = s?.smoke?.value == 'tested'
+		vd['carbonMonoxide_tested'] = s?.carbonMonoxide?.value == 'tested'
+    } else if (type == "water") {
+		def s = device.currentState('water')
+		vd['timestamp'] = s?.isoDate
+		vd['water'] = s?.value == 'wet'
     }
-    
-    def settings = _settings()
 
     return jd
 }
