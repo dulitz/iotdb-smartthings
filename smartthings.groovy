@@ -158,7 +158,7 @@ def _event_subscribe() {
     subscribe(d_water, "water", "_on_event")
     subscribe(d_smoke, "smoke", "_on_event")
     subscribe(d_carbonMonoxide, "carbonMonoxide", "_on_event")
-    subscribe(d_power, "powerMeter", "_on_event")
+    subscribe(d_power, "power", "_on_event")
 }
 
 /*
@@ -288,7 +288,7 @@ def _dtd()
 		water: d_water,
 		smoke: d_smoke,
 		carbonMonoxide: d_carbonMonoxide,
-		powerMeter: d_power,
+		power: d_power,
         lqi: d_lqi,
 
     ]
@@ -382,11 +382,11 @@ private _device_to_json(device, type) {
     } else if (type == "battery") {
         def s = device.currentState('battery')
         vd['timestamp'] = s?.isoDate
-        vd['battery'] = s?.value.toFloat() / 100.0
+        vd['battery'] = s?.value.toFloat()
      } else if (type == "humidity") {
         def s = device.currentState('humidity')
         vd['timestamp'] = s?.isoDate
-        vd['humidity'] = s?.value.toFloat() / 100.0
+        vd['humidity'] = s?.value.toFloat()
     } else if (type == "threeAxis") {
         def s = device.currentState('threeAxis')
         vd['timestamp'] = s?.isoDate
